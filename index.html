@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF FakturaSorterare – Diesel &amp; Bensin</title>
+<script src="pdf.min.js"></script>
+<script>
+  // Offline-läge: lägg pdf.min.js (och pdf.worker.min.js) i samma mapp som denna fil.
+  // Om de saknas faller appen tillbaka på CDN (kräver internet första gången).
+  if (typeof pdfjsLib === "undefined") {
+    document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>');
+  }
+</script>
+<style>
+  :root { --bg:#f4f6f8; --card:#fff; --ink:#1e2a36; --muted:#6b7a89; --accent:#0b6e99; --diesel:#b45309; --bensin:#15803d; --line:#dde4ea; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Segoe UI, system-ui, sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:var(--accent); color:#fff; padding:18px 24px; }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; font-size:13px; opacity:.85; }
+  main { max-width:1100px; margin:24px auto; padding:0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  #drop { border:2px dashed var(--accent); border-radius:10px; padding:32px; text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+  #drop.hover { background:#e8f4fa; }
+  #drop strong { color:var(--ink); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { border-bottom:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { cursor:pointer; user-select:none; white-space:nowrap; background:#eef3f7; }
+  th small { color:var(--muted); }
+  tr:hover td { background:#f7fbfd; }
+  select { font:inherit; padding:2px 4px; }
+  .tag { padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; color:#fff; white-space:nowrap; }
+  .tag-diesel { background:var(--diesel); }
+  .tag-bensin { background:var(--bensin); }
+  .tag-ovrigt { background:#94a3b8; }
+  .tag-okand { background:#e11d48; }
+  .sums { display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }
+  .sum-box { flex:1; min-width:160px; border:1px solid var(--line); border-radius:8px; padding:10px 14px; }
+  .sum-box h3 { margin:0 0 6px; font-size:13px; color:var(--muted); }
+  .sum-box .num { font-size:20px; font-weight:700; }
+  button { font:inherit; cursor:pointer; border:1px solid var(--line); background:#fff; border-radius:6px; padding:7px 12px; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:hover { filter:brightness(.97); }
+  #status { color:var(--muted); font-size:13px; min-height:18px; margin-top:8px; }
+  textarea { width:100%; min-height:110px; font-family:Consolas, monospace; font-size:12px; }
+  .muted { color:var(--muted); font-size:12px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>PDF FakturaSorterare – Diesel &amp; Bensin</h1>
+  <p>100 % offline: filerna analyseras lokalt i webbläsaren, inget laddas upp.</p>
+</header>
+<main>
+  <div class="card" id="drop">
+    <strong>Dra och släpp PDF-fakturor här</strong> eller klicka för att välja filer<br>
+    <span class="muted">Flera filer samtidigt fungerar. Textbaserade PDF:er fungerar bäst (skannade behöver OCR, stöds ej).</span>
+    <input type="file" id="fileInput" accept="application/pdf" multiple hidden>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h2 style="margin:0;font-size:16px">Resultat</h2>
+      <div class="row">
+        <button class="primary" id="exportCsv">Exportera CSV</button>
+        <button id="clearAll">Rensa allt</button>
+      </div>
+    </div>
+    <div id="tableWrap" style="overflow-x:auto;margin-top:10px"></div>
+    <div class="sums" id="sums"></div>
+    <div id="status"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 8px;font-size:16px">Nyckelord för kategorisering</h2>
+    <p class="muted" style="margin-top:0">Ett nyckelord per rad per ruta. Spara-knappen lagrar reglerna i webbläsaren.</p>
+    <div class="row">
+      <div style="flex:1"><label>Diesel</label><textarea id="kwDiesel"></textarea></div>
+      <div style="flex:1"><label>Bensin</label><textarea id="kwBensin"></textarea></div>
+      <div style="flex:1"><label>Ignorera (t.ex. moms-rader)</label><textarea id="kwSkip"></textarea></div>
+    </div>
+    <div class="row" style="margin-top:8px"><button class="primary" id="saveKw">Spara nyckelord</button><span class="muted" id="kwStatus"></span></div>
+  </div>
+
+  <div class="card muted">
+    <b>Offline-installation:</b> ladda engång ner <code>pdf.min.js</code> och <code>pdf.worker.min.js</code>
+    (t.ex. från pdf.js 3.11.174 på cdnjs) och lägg dem i samma mapp som denna HTML-fil — då krävs ingen internetuppkoppling alls.
+  </div>
+</main>
+
+<script>
+"use strict";
+
+const DEFAULT_KEYWORDS = {
+  diesel: ["diesel", "dieselolja", "gasoil", "hvo", "fordonsgas", "adblue"],
+  bensin: ["bensin", "petrol", "gasoline", "95-oxygenfri", "98-octane", "etanol", "e85"],
+  skip:   ["moms", "vat", "cw", "slutbetala", "ocr", "förfall", "maturity"]
+};
+
+let keywords = loadKeywords();
+let rows = [];
+let sortState = { col: "date", dir: 1 };
+
+function loadKeywords() {
+  try {
+    const s = JSON.parse(localStorage.getItem("pdfsorter_keywords") || "null");
+    return s || structuredClone(DEFAULT_KEYWORDS);
+  } catch { return structuredClone(DEFAULT_KEYWORDS); }
+}
+function saveKeywordsLS() {
+  localStorage.setItem("pdfsorter_keywords", JSON.stringify(keywords));
+}
+
+const statusEl = document.getElementById("status");
+function status(msg) { statusEl.textContent = msg; }
+
+document.getElementById("drop").addEventListener("click", () => document.getElementById("fileInput").click());
+document.getElementById("fileInput").addEventListener("change", e => handleFiles(e.target.files));
+const drop = document.getElementById("drop");
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("hover"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("hover"); }));
+drop.addEventListener("drop", e => handleFiles(e.dataTransfer.files));
+
+async function handleFiles(files) {
+  if (typeof pdfjsLib === "undefined") { status("pdf.js hittades inte – lägg pdf.min.js i samma mapp."); return; }
+  try { pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.js"; }
+  catch {}
+  const list = Array.from(files).filter(f => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+  if (!list.length) { status("Inga PDF-filer hittades."); return; }
+  status(`Läser ${list.length} fil(er)…`);
+  const start = rows.length;
+  for (const f of list) {
+    status(`Läser ${f.name}…`);
+    try {
+      const buf = await f.arrayBuffer();
+      const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+      let text = "";
+      for (let p = 1; p <= doc.numPages; p++) {
+        const page = await doc.getPage(p);
+        const content = await page.getTextContent();
+        text += content.items.map(i => i.str).join(" ") + "\n";
+        content.items.forEach(it => { if (it.hasEOL) text += "\n"; });
+      }
+      rows.push(...extractRows(f.name, text));
+    } catch (err) {
+      rows.push({ file: f.name, date: "", desc: "Kunde inte läsas (" + err.message + ")", category: "okand", liters: 0, amount: 0, raw: "" });
+    }
+  }
+  status(`Klart: ${rows.length - start} rader från ${list.length} fil(er).`);
+  render();
+}
+
+const NUM = String.raw`[0-9][0-9\s.,']*`;
+const litersRe = new RegExp(NUM + String.raw`\s*(l\b|liter|ltr|l\.)`, "gi");
+const amountRe = new RegExp(NUM + String.raw`\s*(?:kr|sek|:-)`, "gi");
+
+function parseNum(s) {
+  let t = s.replace(/\s|'/g, "");
+  if (t.includes(",") && t.includes(".")) t = t.replace(/\./g, "").replace(",", ".");
+  else if (t.includes(",")) t = t.replace(/\.(?=\d{3}\b)/g, "").replace(",", ".");
+  else t = t.replace(",", ".");
+  const n = parseFloat(t);
+  return isNaN(n) ? 0 : n;
+}
+function firstMatch(re, line) {
+  re.lastIndex = 0;
+  const m = re.exec(line);
+  return m ? parseNum(m[0]) : 0;
+}
+function findDate(text) {
+  const m = text.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/) || text.match(/\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b/);
+  if (!m) return "";
+  if (m[0].startsWith("20")) return `${m[1]}-${m[2].padStart(2,"0")}-${m[3].padStart(2,"0")}`;
+  return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+}
+
+function extractRows(fileName, text) {
+  const date = findDate(text);
+  const lines = text.split(/\n+/).map(l => l.replace(/\s+/g, " ").trim()).filter(l => l.length > 3);
+  const out = [];
+  for (const line of lines) {
+    const low = line.toLowerCase();
+    if (keywords.skip.some(k => low.includes(k.toLowerCase()))) continue;
+    const isDiesel = keywords.diesel.some(k => low.includes(k.toLowerCase()));
+    const isBensin = keywords.bensin.some(k => low.includes(k.toLowerCase()));
+    if (!isDiesel && !isBensin) continue;
+    const category = isDiesel ? "diesel" : "bensin";
+    const liters = firstMatch(litersRe, line) || firstMatch(litersRe, low);
+    let amount = firstMatch(amountRe, line);
+    if (!amount) { const nums = line.match(new RegExp(NUM, "g")) || []; amount = nums.length ? parseNum(nums[nums.length - 1]) : 0; }
+    out.push({ file: fileName, date, desc: line.slice(0, 160), category, liters, amount, raw: line });
+  }
+  if (!out.length) {
+    out.push({ file: fileName, date, desc: "(ingen bränslerad hittades – sätt kategori manuellt)", category: "okand", liters: 0, amount: 0, raw: "" });
+  }
+  return out;
+}
+
+const COLS = [
+  { key: "date", label: "Datum" },
+  { key: "file", label: "Fil" },
+  { key: "desc", label: "Beskrivning" },
+  { key: "category", label: "Kategori" },
+  { key: "liters", label: "Liter" },
+  { key: "amount", label: "Belopp (kr)" }
+];
+
+function sortRows() {
+  const { col, dir } = sortState;
+  rows.sort((a, b) => {
+    let x = a[col], y = b[col];
+    if (typeof x === "number" && typeof y === "number") return (x - y) * dir;
+    return String(x ?? "").localeCompare(String(y ?? ""), "sv") * dir;
+  });
+}
+
+function render() {
+  sortRows();
+  const wrap = document.getElementById("tableWrap");
+  let html = "<table><thead><tr>" + COLS.map(c => {
+    const arrow = sortState.col === c.key ? (sortState.dir === 1 ? " ▲" : " ▼") : "";
+    return `<th data-col="${c.key}">${c.label}${arrow}</th>`;
+  }).join("") + "</tr></thead><tbody>";
+  rows.forEach((r, i) => {
+    const cls = r.category === "diesel" ? "tag-diesel" : r.category === "bensin" ? "tag-bensin" : r.category === "ovrigt" ? "tag-ovrigt" : "tag-okand";
+    const label = { diesel: "Diesel", bensin: "Bensin", ovrigt: "Övrigt", okand: "Okänd" }[r.category];
+    html += `<tr>
+      <td>${r.date || "–"}</td>
+      <td class="muted">${r.file}</td>
+      <td>${r.desc}</td>
+      <td><span class="tag ${cls}">${label}</span></td>
+      <td>${r.liters ? r.liters.toLocaleString("sv-SE") : "–"}</td>
+      <td>${r.amount ? r.amount.toLocaleString("sv-SE") : "–"}</td>
+      <td style="display:none"></td>
+      <td><select data-i="${i}">
+        <option value="diesel"${r.category==="diesel"?" selected":""}>Diesel</option>
+        <option value="bensin"${r.category==="bensin"?" selected":""}>Bensin</option>
+        <option value="ovrigt"${r.category==="ovrigt"?" selected":""}>Övrigt</option>
+        <option value="okand"${r.category==="okand"?" selected":""}>Okänd</option>
+      </select></td>
+    </tr>`;
+  });
+  html += "</tbody></table>";
+  wrap.innerHTML = html;
+  wrap.querySelectorAll("th[data-col]").forEach(th => th.addEventListener("click", () => {
+    const c = th.dataset.col;
+    sortState = { col: c, dir: sortState.col === c ? -sortState.dir : 1 };
+    render();
+  }));
+  wrap.querySelectorAll("select[data-i]").forEach(sel => sel.addEventListener("change", () => {
+    rows[+sel.dataset.i].category = sel.value;
+    render();
+  }));
+  renderSums();
+}
+
+function renderSums() {
+  const sum = c => rows.filter(r => r.category === c);
+  const total = (arr, k) => arr.reduce((a, r) => a + (r[k] || 0), 0);
+  const diesel = sum("diesel"), bensin = sum("bensin");
+  document.getElementById("sums").innerHTML = `
+    <div class="sum-box"><h3>Diesel (${diesel.length} rader)</h3><div class="num">${total(diesel,"liters").toLocaleString("sv-SE")} l</div><div>${total(diesel,"amount").toLocaleString("sv-SE")} kr</div></div>
+    <div class="sum-box"><h3>Bensin (${bensin.length} rader)</h3><div class="num">${total(bensin,"liters").toLocaleString("sv-SE")} l</div><div>${total(bensin,"amount").toLocaleString("sv-SE")} kr</div></div>
+    <div class="sum-box"><h3>Totalt</h3><div class="num">${(total(diesel,"amount")+total(bensin,"amount")).toLocaleString("sv-SE")} kr</div><div>${(total(diesel,"liters")+total(bensin,"liters")).toLocaleString("sv-SE")} l</div></div>`;
+}
+
+document.getElementById("exportCsv").addEventListener("click", () => {
+  const head = COLS.map(c => c.label).join(";");
+  const esc = v => `"${String(v ?? "").replace(/"/g, '""').replace(".", ",")}"`;
+  const csv = "\uFEFF" + head + "\n" + rows.map(r => [r.date, r.file, r.desc, r.category, r.liters, r.amount].map(esc).join(";")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = "branslefakturor.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+document.getElementById("clearAll").addEventListener("click", () => { rows = []; render(); status(""); });
+
+function fillKw() {
+  document.getElementById("kwDiesel").value = keywords.diesel.join("\n");
+  document.getElementById("kwBensin").value = keywords.bensin.join("\n");
+  document.getElementById("kwSkip").value = keywords.skip.join("\n");
+}
+document.getElementById("saveKw").addEventListener("click", () => {
+  keywords = {
+    diesel: document.getElementById("kwDiesel").value.split("\n").map(s => s.trim()).filter(Boolean),
+    bensin: document.getElementById("kwBensin").value.split("\n").map(s => s.trim()).filter(Boolean),
+    skip:   document.getElementById("kwSkip").value.split("\n").map(s => s.trim()).filter(Boolean)
+  };
+  saveKeywordsLS();
+  document.getElementById("kwStatus").textContent = "Sparat. OBS: redan inlästa filer kategoriseras om nästa gång de läses in.";
+});
+
+fillKw();
+render();
+status("Redo. Vänligen lägg till PDF-fakturor.");
+</script>
+</body>
+</html>
