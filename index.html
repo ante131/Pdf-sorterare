@@ -57,7 +57,7 @@
 </head>
 <body>
 <header>
-  <h1>PDF FakturaSorterare – Diesel &amp; Bensin <small style="font-weight:400">(version 9)</small></h1>
+  <h1>PDF FakturaSorterare – Diesel &amp; Bensin <small style="font-weight:400">(version 10)</small></h1>
   <p>100 % offline: filerna analyseras lokalt i webbläsaren, inget laddas upp.</p>
 </header>
 <main>
@@ -81,6 +81,11 @@
     <div id="debugArea"></div>
     <div class="sums" id="sums"></div>
     <div id="status"></div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin:0 0 8px;font-size:16px">Summa per faktura</h2>
+    <div id="perInvoiceWrap" style="overflow-x:auto"></div>
   </div>
 
   <div class="card">
@@ -434,6 +439,20 @@ function renderSums() {
   const cats = [["Diesel","diesel"],["Bensin","bensin"],["Aspen","aspen"]];
   const grand = `<div class="sum-box" style="background:#0b6e99;color:#fff;border-color:#0b6e99"><h3 style="color:#fff">TOTALT (alla märkningar)</h3><div class="num">${fmt(allLit)} liter</div><div style="font-size:16px;font-weight:700">${fmt(allAmt)} kr</div></div>`;
   document.getElementById("sums").innerHTML = grand + box("Diesel","diesel") + box("Bensin","bensin") + box("Aspen","aspen") + html;
+
+  const files = [...new Set(rows.map(r => r.file))];
+  let invHtml = "<table><thead><tr><th>Faktura (fil)</th><th>Datum</th><th>Kategorier</th><th>Liter</th><th>Belopp (kr)</th></tr></thead><tbody>";
+  let invSumL = 0, invSumA = 0;
+  for (const f of files) {
+    const g = rows.filter(r => r.file === f);
+    const l = total(g, "liters"), a = total(g, "amount");
+    invSumL += l; invSumA += a;
+    const cats = [...new Set(g.filter(r => r.category !== "okand").map(r => r.category))];
+    const d = g.map(r => r.date).filter(Boolean).sort()[0] || "";
+    invHtml += `<tr><td>${f}</td><td>${d}</td><td>${cats.join(", ") || "–"}</td><td style="font-weight:700">${fmt(l)}</td><td style="font-weight:700">${fmt(a)}</td></tr>`;
+  }
+  invHtml += `</tbody><tfoot><tr style="font-weight:700;background:#eef3f7"><td colspan="3">TOTALT ${files.length} fakturor</td><td>${fmt(invSumL)}</td><td>${fmt(invSumA)}</td></tr></tfoot></table>`;
+  document.getElementById("perInvoiceWrap").innerHTML = rows.length ? invHtml : "";
 }
 
 document.getElementById("exportCsv").addEventListener("click", () => {
