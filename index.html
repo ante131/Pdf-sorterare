@@ -258,11 +258,12 @@ function extractRows(fileName, text) {
       if (!selfAmt) continue;
     }
     if (!category) category = hint || "okand";
-    let amount = firstMatch(amountRe, line);
-    if (!amount) {
-      const sumM = sumRe.exec(line);
+    let amount = 0;
+    {
+      const sumM = sumRe.exec(line) || sumNoCcyRe.exec(line);
       if (sumM) amount = parseNum(sumM[2]);
     }
+    if (!amount) amount = firstMatch(amountRe, line);
     if (!amount) {
       for (let j = i + 1; j < Math.min(i + 9, lines.length); j++) {
         const m2 = sumRe.exec(lines[j]) || sumNoCcyRe.exec(lines[j]);
