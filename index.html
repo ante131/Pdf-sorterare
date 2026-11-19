@@ -103,7 +103,7 @@
 
 const DEFAULT_KEYWORDS = {
   diesel: ["diesel", "dieselolja", "gasoil", "hvo", "fordonsgas", "adblue"],
-  bensin: ["bensin", "petrol", "gasoline", "95-oxygenfri", "98-octane", "etanol", "e85"],
+  bensin: ["bensin", "bensinstation", "bensinmack", "petrol", "gasoline", "95-oxygenfri", "98-octane", "etanol", "e85"],
   aspen: ["aspen", "alkylat", "aspen 2-takt", "aspen 4-takt"],
   skip:   ["moms", "vat", "cw", "slutbetala", "ocr", "förfall", "maturity"]
 };
@@ -203,21 +203,56 @@ function findDate(text) {
   return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
 }
 
+const qtyRe = new RegExp(String.raw`(kvantitet|mängd|volym|liter|antal)\D{0,12}(` + NUM + `)`, "i");
+const sumRe = new RegExp(String.raw`(summa|belopp|att betala|total)\D{0,20}(` + NUM + `)\s*(?:kr|sek|:-)`, "i");
+
+function docCategoryHint(text) {
+  const low = text.toLowerCase();
+  const hits = [];
+  if (keywords.aspen.some(k => low.includes(k.toLowerCase()))) hits.push("aspen");
+  if (keywords.diesel.some(k => low.includes(k.toLowerCase()))) hits.push("diesel");
+  if (keywords.bensin.some(k => low.includes(k.toLowerCase()))) hits.push("bensin");
+  if (hits.length === 1) return hits[0];
+  if (hits.length > 1) return "okand";
+  return "";
+}
+
 function extractRows(fileName, text) {
   const date = findDate(text);
+  const hint = docCategoryHint(text);
   const lines = text.split(/\n+/).map(l => l.replace(/\s+/g, " ").trim()).filter(l => l.length > 3);
   const out = [];
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const low = line.toLowerCase();
     if (keywords.skip.some(k => low.includes(k.toLowerCase()))) continue;
+    let category = "";
     const isDiesel = keywords.diesel.some(k => low.includes(k.toLowerCase()));
     const isBensin = keywords.bensin.some(k => low.includes(k.toLowerCase()));
     const isAspen = keywords.aspen.some(k => low.includes(k.toLowerCase()));
-    if (!isDiesel && !isBensin && !isAspen) continue;
-    if (isAspen) category = "aspen"; else if (isDiesel) category = "diesel"; else category = "bensin";
-    let category;
-    const liters = firstMatch(litersRe, line) || firstMatch(litersRe, low);
+    if (isAspen) category = "aspen"; else if (isDiesel) category = "diesel"; else if (isBensin) category = "bensin";
+    let liters = firstMatch(litersRe, line) || firstMatch(litersRe, low);
+    const qtyM = qtyRe.exec(line);
+    if (!liters && qtyM) liters = parseNum(qtyM[2]);
+    const hasKeywords = !!(isDiesel || isBensin || isAspen);
+    if (!hasKeywords && !liters) continue;
+    if (hasKeywords && !liters) {
+      const sumM0 = sumRe.exec(line);
+      const selfAmt = firstMatch(amountRe, line) || (sumM0 ? parseNum(sumM0[2]) : 0);
+      if (!selfAmt) continue;
+    }
+    if (!category) category = hint || "okand";
     let amount = firstMatch(amountRe, line);
+    if (!amount) {
+      const sumM = sumRe.exec(line);
+      if (sumM) amount = parseNum(sumM[2]);
+    }
+    if (!amount) {
+      for (let j = i + 1; j < Math.min(i + 9, lines.length); j++) {
+        const m2 = sumRe.exec(lines[j]);
+        if (m2) { amount = parseNum(m2[2]); break; }
+      }
+    }
     if (!amount) { const nums = line.match(new RegExp(NUM, "g")) || []; amount = nums.length ? parseNum(nums[nums.length - 1]) : 0; }
     out.push({ file: fileName, date, tag: "Ingen märkning", desc: line.slice(0, 160), category, liters, amount, raw: line });
   }
