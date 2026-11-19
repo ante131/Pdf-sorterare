@@ -320,8 +320,7 @@ function displayRows() {
 }
 
 function render() {
-  const { list: shown, grouped } = displayRows();
-  sortRows();
+  const { list: shown } = displayRows();
   const { col, dir } = sortState;
   shown.sort((a, b) => {
     let x = a[col], y = b[col];
