@@ -57,7 +57,7 @@
 </head>
 <body>
 <header>
-  <h1>PDF FakturaSorterare – Diesel &amp; Bensin</h1>
+  <h1>PDF FakturaSorterare – Diesel &amp; Bensin <small style="font-weight:400">(version 8)</small></h1>
   <p>100 % offline: filerna analyseras lokalt i webbläsaren, inget laddas upp.</p>
 </header>
 <main>
@@ -133,6 +133,13 @@ function saveKeywordsLS() {
 const statusEl = document.getElementById("status");
 function status(msg) { statusEl.textContent = msg; }
 
+const origRenderSums = renderSums;
+renderSums = function () {
+  try { origRenderSums(); } catch (e) {
+    document.getElementById("status").textContent = "Summeringsfel: " + e.message + " – rapportera denna text.";
+  }
+};
+
 document.getElementById("drop").addEventListener("click", () => document.getElementById("fileInput").click());
 document.getElementById("fileInput").addEventListener("change", e => handleFiles(e.target.files));
 const drop = document.getElementById("drop");
@@ -192,6 +199,9 @@ async function handleFiles(files) {
   }
   status(`Klart: ${rows.length - start} rader från ${list.length} fil(er).`);
   render();
+  if (!document.getElementById("tableWrap").innerHTML.includes("<tbody>")) {
+    status(statusEl.textContent + " (tabellen kunde inte ritas – se felmeddelande)");
+  }
 }
 
 const NUM = String.raw`[0-9][0-9\s.,']*`;
@@ -320,6 +330,12 @@ function displayRows() {
 }
 
 function render() {
+  try { renderInner(); } catch (e) {
+    document.getElementById("status").textContent = "Visningsfel: " + e.message + " – rapportera denna text.";
+  }
+}
+
+function renderInner() {
   const { list: shown } = displayRows();
   const { col, dir } = sortState;
   shown.sort((a, b) => {
