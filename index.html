@@ -7,10 +7,16 @@
 <script src="pdf.min.js"></script>
 <script>
   // Offline-läge: lägg pdf.min.js (och pdf.worker.min.js) i samma mapp som denna fil.
-  // Om de saknas faller appen tillbaka på CDN (kräver internet första gången).
-  if (typeof pdfjsLib === "undefined") {
-    document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"><\/script>');
-  }
+  // Om de saknas laddas pdf.js och arbetaren automatiskt från CDN (kräver internet).
+  var PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+  var PDFJS_LOAD = new Promise(function (resolve) {
+    if (typeof pdfjsLib !== "undefined") return resolve();
+    var sc = document.createElement("script");
+    sc.src = PDFJS_CDN + "pdf.min.js";
+    sc.onload = resolve;
+    sc.onerror = function () { resolve(); };
+    document.head.appendChild(sc);
+  });
 </script>
 <style>
   :root { --bg:#f4f6f8; --card:#fff; --ink:#1e2a36; --muted:#6b7a89; --accent:#0b6e99; --diesel:#b45309; --bensin:#15803d; --line:#dde4ea; }
@@ -128,10 +134,26 @@ const drop = document.getElementById("drop");
 ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("hover"); }));
 drop.addEventListener("drop", e => handleFiles(e.dataTransfer.files));
 
+let usedCdnWorker = false;
+async function openPdf(buf) {
+  try {
+    return await pdfjsLib.getDocument({ data: buf }).promise;
+  } catch (err) {
+    if (/fake worker|worker/i.test(err.message) && !usedCdnWorker) {
+      usedCdnWorker = true;
+      pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_CDN + "pdf.worker.min.js";
+      return openPdf(buf);
+    }
+    throw err;
+  }
+}
+
 async function handleFiles(files) {
-  if (typeof pdfjsLib === "undefined") { status("pdf.js hittades inte – lägg pdf.min.js i samma mapp."); return; }
-  try { pdfjsLib.GlobalWorkerOptions.workerSrc = "pdf.worker.min.js"; }
-  catch {}
+  await PDFJS_LOAD;
+  if (typeof pdfjsLib === "undefined") {
+    status("pdf.js kunde inte laddas. Lägg pdf.min.js och pdf.worker.min.js i samma mapp som index.html (se instruktion längst ner), eller kontrollera internetuppkopplingen.");
+    return;
+  }
   const list = Array.from(files).filter(f => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
   if (!list.length) { status("Inga PDF-filer hittades."); return; }
   status(`Läser ${list.length} fil(er)…`);
@@ -140,7 +162,7 @@ async function handleFiles(files) {
     status(`Läser ${f.name}…`);
     try {
       const buf = await f.arrayBuffer();
-      const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+      const doc = await openPdf(buf);
       let text = "";
       for (let p = 1; p <= doc.numPages; p++) {
         const page = await doc.getPage(p);
@@ -150,7 +172,7 @@ async function handleFiles(files) {
       }
       rows.push(...extractRows(f.name, text));
     } catch (err) {
-      rows.push({ file: f.name, date: "", tag: "Ingen märkning", desc: "Kunde inte läsas (" + err.message + ")", category: "okand", liters: 0, amount: 0, raw: "" });
+      rows.push({ file: f.name, date: "", tag: "Ingen märkning", desc: "Kunde inte läsas (" + String(err.message).slice(0, 120) + ")", category: "okand", liters: 0, amount: 0, raw: "" });
     }
   }
   status(`Klart: ${rows.length - start} rader från ${list.length} fil(er).`);
