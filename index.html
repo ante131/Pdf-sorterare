@@ -57,7 +57,7 @@
 </head>
 <body>
 <header>
-  <h1>PDF FakturaSorterare – Diesel &amp; Bensin <small style="font-weight:400">(version 8)</small></h1>
+  <h1>PDF FakturaSorterare – Diesel &amp; Bensin <small style="font-weight:400">(version 9)</small></h1>
   <p>100 % offline: filerna analyseras lokalt i webbläsaren, inget laddas upp.</p>
 </header>
 <main>
@@ -372,9 +372,10 @@ function renderInner() {
     </tr>`;
   });
   html += `</tbody><tfoot><tr style="font-weight:700;background:#eef3f7">
-    <td colspan="5">Summa (${shown.length} rader)</td>
-    <td>${sumLiters.toLocaleString("sv-SE")}</td>
-    <td>${sumAmount.toLocaleString("sv-SE")}</td>
+    <td colspan="4">TOTALT ${shown.length} rader</td>
+    <td style="text-align:right">Summa liter →</td>
+    <td style="font-weight:900">${sumLiters.toLocaleString("sv-SE")}</td>
+    <td style="font-weight:900">${sumAmount.toLocaleString("sv-SE")}</td>
     <td></td>
   </tr></tfoot></table>`;
   wrap.innerHTML = html;
@@ -425,7 +426,14 @@ function renderSums() {
     }
     html += `<div class="sum-box"><h3>${tag} – bränslekostnad</h3><div class="num">${fmt(costAll)} kr</div>${lines}</div>`;
   }
-  document.getElementById("sums").innerHTML = html;
+  const allLit = total(rows, "liters"), allAmt = total(rows, "amount");
+  const box = (name, cat) => {
+    const g = rows.filter(r => r.category === cat);
+    return `<div class="sum-box"><h3>${name}</h3><div class="num">${fmt(total(g,"liters"))} l</div><div>${fmt(total(g,"amount"))} kr</div></div>`;
+  };
+  const cats = [["Diesel","diesel"],["Bensin","bensin"],["Aspen","aspen"]];
+  const grand = `<div class="sum-box" style="background:#0b6e99;color:#fff;border-color:#0b6e99"><h3 style="color:#fff">TOTALT (alla märkningar)</h3><div class="num">${fmt(allLit)} liter</div><div style="font-size:16px;font-weight:700">${fmt(allAmt)} kr</div></div>`;
+  document.getElementById("sums").innerHTML = grand + box("Diesel","diesel") + box("Bensin","bensin") + box("Aspen","aspen") + html;
 }
 
 document.getElementById("exportCsv").addEventListener("click", () => {
