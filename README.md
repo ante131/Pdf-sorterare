@@ -4,9 +4,11 @@ Ett fristående offline-HTML-program som sorterar PDF-fakturor efter diesel- och
 
 ## Funktioner
 - Dra & släpp flera PDF-fakturor samtidigt
-- Automatisk kategorisering av diesel- och bensinrader via redigerbara nyckelord
+- Automatisk kategorisering av diesel-, bensin- och Aspen-rader via redigerbara nyckelord
 - Extraherar liter, belopp och datum automatiskt
-- Sorterbar tabell och summeringar per kategori
+- Märkning per rad (fordon/objekt, t.ex. ”Gräv 1”) med fritext + förslag på tidigare märkningar
+- Summeringar och bränslekostnad per märkning (liter och kronor per kategori)
+- Sorterbar tabell
 - Manuell rättning av kategori per rad
 - Export till CSV (Excel-vänligt, svenska decimaler)
 

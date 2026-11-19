@@ -33,6 +33,7 @@
   .tag { padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; color:#fff; white-space:nowrap; }
   .tag-diesel { background:var(--diesel); }
   .tag-bensin { background:var(--bensin); }
+  .tag-aspen { background:#7c3aed; }
   .tag-ovrigt { background:#94a3b8; }
   .tag-okand { background:#e11d48; }
   .sums { display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }
@@ -79,6 +80,7 @@
     <div class="row">
       <div style="flex:1"><label>Diesel</label><textarea id="kwDiesel"></textarea></div>
       <div style="flex:1"><label>Bensin</label><textarea id="kwBensin"></textarea></div>
+      <div style="flex:1"><label>Aspen</label><textarea id="kwAspen"></textarea></div>
       <div style="flex:1"><label>Ignorera (t.ex. moms-rader)</label><textarea id="kwSkip"></textarea></div>
     </div>
     <div class="row" style="margin-top:8px"><button class="primary" id="saveKw">Spara nyckelord</button><span class="muted" id="kwStatus"></span></div>
@@ -96,6 +98,7 @@
 const DEFAULT_KEYWORDS = {
   diesel: ["diesel", "dieselolja", "gasoil", "hvo", "fordonsgas", "adblue"],
   bensin: ["bensin", "petrol", "gasoline", "95-oxygenfri", "98-octane", "etanol", "e85"],
+  aspen: ["aspen", "alkylat", "aspen 2-takt", "aspen 4-takt"],
   skip:   ["moms", "vat", "cw", "slutbetala", "ocr", "förfall", "maturity"]
 };
 
@@ -106,7 +109,9 @@ let sortState = { col: "date", dir: 1 };
 function loadKeywords() {
   try {
     const s = JSON.parse(localStorage.getItem("pdfsorter_keywords") || "null");
-    return s || structuredClone(DEFAULT_KEYWORDS);
+    if (!s) return structuredClone(DEFAULT_KEYWORDS);
+    for (const k of Object.keys(DEFAULT_KEYWORDS)) if (!s[k]) s[k] = structuredClone(DEFAULT_KEYWORDS[k]);
+    return s;
   } catch { return structuredClone(DEFAULT_KEYWORDS); }
 }
 function saveKeywordsLS() {
@@ -145,7 +150,7 @@ async function handleFiles(files) {
       }
       rows.push(...extractRows(f.name, text));
     } catch (err) {
-      rows.push({ file: f.name, date: "", desc: "Kunde inte läsas (" + err.message + ")", category: "okand", liters: 0, amount: 0, raw: "" });
+      rows.push({ file: f.name, date: "", tag: "Ingen märkning", desc: "Kunde inte läsas (" + err.message + ")", category: "okand", liters: 0, amount: 0, raw: "" });
     }
   }
   status(`Klart: ${rows.length - start} rader från ${list.length} fil(er).`);
@@ -185,15 +190,17 @@ function extractRows(fileName, text) {
     if (keywords.skip.some(k => low.includes(k.toLowerCase()))) continue;
     const isDiesel = keywords.diesel.some(k => low.includes(k.toLowerCase()));
     const isBensin = keywords.bensin.some(k => low.includes(k.toLowerCase()));
-    if (!isDiesel && !isBensin) continue;
-    const category = isDiesel ? "diesel" : "bensin";
+    const isAspen = keywords.aspen.some(k => low.includes(k.toLowerCase()));
+    if (!isDiesel && !isBensin && !isAspen) continue;
+    if (isAspen) category = "aspen"; else if (isDiesel) category = "diesel"; else category = "bensin";
+    let category;
     const liters = firstMatch(litersRe, line) || firstMatch(litersRe, low);
     let amount = firstMatch(amountRe, line);
     if (!amount) { const nums = line.match(new RegExp(NUM, "g")) || []; amount = nums.length ? parseNum(nums[nums.length - 1]) : 0; }
-    out.push({ file: fileName, date, desc: line.slice(0, 160), category, liters, amount, raw: line });
+    out.push({ file: fileName, date, tag: "Ingen märkning", desc: line.slice(0, 160), category, liters, amount, raw: line });
   }
   if (!out.length) {
-    out.push({ file: fileName, date, desc: "(ingen bränslerad hittades – sätt kategori manuellt)", category: "okand", liters: 0, amount: 0, raw: "" });
+    out.push({ file: fileName, date, tag: "Ingen märkning", desc: "(ingen bränslerad hittades – sätt kategori manuellt)", category: "okand", liters: 0, amount: 0, raw: "" });
   }
   return out;
 }
@@ -203,6 +210,7 @@ const COLS = [
   { key: "file", label: "Fil" },
   { key: "desc", label: "Beskrivning" },
   { key: "category", label: "Kategori" },
+  { key: "tag", label: "Märkning" },
   { key: "liters", label: "Liter" },
   { key: "amount", label: "Belopp (kr)" }
 ];
@@ -219,24 +227,25 @@ function sortRows() {
 function render() {
   sortRows();
   const wrap = document.getElementById("tableWrap");
-  let html = "<table><thead><tr>" + COLS.map(c => {
+  let html = '<datalist id="tagList"></datalist><table><thead><tr>' + COLS.map(c => {
     const arrow = sortState.col === c.key ? (sortState.dir === 1 ? " ▲" : " ▼") : "";
     return `<th data-col="${c.key}">${c.label}${arrow}</th>`;
   }).join("") + "</tr></thead><tbody>";
   rows.forEach((r, i) => {
-    const cls = r.category === "diesel" ? "tag-diesel" : r.category === "bensin" ? "tag-bensin" : r.category === "ovrigt" ? "tag-ovrigt" : "tag-okand";
-    const label = { diesel: "Diesel", bensin: "Bensin", ovrigt: "Övrigt", okand: "Okänd" }[r.category];
+    const cls = r.category === "diesel" ? "tag-diesel" : r.category === "bensin" ? "tag-bensin" : r.category === "aspen" ? "tag-aspen" : r.category === "ovrigt" ? "tag-ovrigt" : "tag-okand";
+    const label = { diesel: "Diesel", bensin: "Bensin", aspen: "Aspen", ovrigt: "Övrigt", okand: "Okänd" }[r.category];
     html += `<tr>
       <td>${r.date || "–"}</td>
       <td class="muted">${r.file}</td>
       <td>${r.desc}</td>
       <td><span class="tag ${cls}">${label}</span></td>
+      <td><input type="text" list="tagList" data-i="${i}" value="${r.tag || ""}" style="width:110px"></td>
       <td>${r.liters ? r.liters.toLocaleString("sv-SE") : "–"}</td>
       <td>${r.amount ? r.amount.toLocaleString("sv-SE") : "–"}</td>
-      <td style="display:none"></td>
       <td><select data-i="${i}">
         <option value="diesel"${r.category==="diesel"?" selected":""}>Diesel</option>
         <option value="bensin"${r.category==="bensin"?" selected":""}>Bensin</option>
+        <option value="aspen"${r.category==="aspen"?" selected":""}>Aspen</option>
         <option value="ovrigt"${r.category==="ovrigt"?" selected":""}>Övrigt</option>
         <option value="okand"${r.category==="okand"?" selected":""}>Okänd</option>
       </select></td>
@@ -253,23 +262,40 @@ function render() {
     rows[+sel.dataset.i].category = sel.value;
     render();
   }));
+  wrap.querySelectorAll("input[list=tagList]").forEach(inp => inp.addEventListener("change", () => {
+    rows[+inp.dataset.i].tag = inp.value.trim() || "Ingen märkning";
+    render();
+  }));
+  const tags = [...new Set(rows.map(r => r.tag || "Ingen märkning"))];
+  const dl = wrap.querySelector("datalist#tagList");
+  if (dl) dl.innerHTML = tags.map(t => `<option value="${t}">`).join("");
   renderSums();
 }
 
 function renderSums() {
-  const sum = c => rows.filter(r => r.category === c);
   const total = (arr, k) => arr.reduce((a, r) => a + (r[k] || 0), 0);
-  const diesel = sum("diesel"), bensin = sum("bensin");
-  document.getElementById("sums").innerHTML = `
-    <div class="sum-box"><h3>Diesel (${diesel.length} rader)</h3><div class="num">${total(diesel,"liters").toLocaleString("sv-SE")} l</div><div>${total(diesel,"amount").toLocaleString("sv-SE")} kr</div></div>
-    <div class="sum-box"><h3>Bensin (${bensin.length} rader)</h3><div class="num">${total(bensin,"liters").toLocaleString("sv-SE")} l</div><div>${total(bensin,"amount").toLocaleString("sv-SE")} kr</div></div>
-    <div class="sum-box"><h3>Totalt</h3><div class="num">${(total(diesel,"amount")+total(bensin,"amount")).toLocaleString("sv-SE")} kr</div><div>${(total(diesel,"liters")+total(bensin,"liters")).toLocaleString("sv-SE")} l</div></div>`;
+  const fmt = n => n.toLocaleString("sv-SE");
+  const CATS = [["diesel","Diesel"],["bensin","Bensin"],["aspen","Aspen"],["ovrigt","Övrigt"],["okand","Okänd"]];
+  const tags = [...new Set(rows.map(r => r.tag || "Ingen märkning"))].sort((a,b)=>a.localeCompare(b,"sv"));
+  let html = "";
+  for (const tag of tags) {
+    const group = rows.filter(r => (r.tag || "Ingen märkning") === tag);
+    const costAll = total(group, "amount");
+    let lines = "";
+    for (const [cat, name] of CATS) {
+      const g = group.filter(r => r.category === cat);
+      if (!g.length) continue;
+      lines += `<div>${name}: ${fmt(total(g,"liters"))} l – ${fmt(total(g,"amount"))} kr (${g.length} rader)</div>`;
+    }
+    html += `<div class="sum-box"><h3>${tag} – bränslekostnad</h3><div class="num">${fmt(costAll)} kr</div>${lines}</div>`;
+  }
+  document.getElementById("sums").innerHTML = html;
 }
 
 document.getElementById("exportCsv").addEventListener("click", () => {
   const head = COLS.map(c => c.label).join(";");
   const esc = v => `"${String(v ?? "").replace(/"/g, '""').replace(".", ",")}"`;
-  const csv = "\uFEFF" + head + "\n" + rows.map(r => [r.date, r.file, r.desc, r.category, r.liters, r.amount].map(esc).join(";")).join("\n");
+  const csv = "\uFEFF" + head + "\n" + rows.map(r => [r.date, r.file, r.desc, r.category, r.tag || "", r.liters, r.amount].map(esc).join(";")).join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   a.download = "branslefakturor.csv";
@@ -282,12 +308,14 @@ document.getElementById("clearAll").addEventListener("click", () => { rows = [];
 function fillKw() {
   document.getElementById("kwDiesel").value = keywords.diesel.join("\n");
   document.getElementById("kwBensin").value = keywords.bensin.join("\n");
+  document.getElementById("kwAspen").value = keywords.aspen.join("\n");
   document.getElementById("kwSkip").value = keywords.skip.join("\n");
 }
 document.getElementById("saveKw").addEventListener("click", () => {
   keywords = {
     diesel: document.getElementById("kwDiesel").value.split("\n").map(s => s.trim()).filter(Boolean),
     bensin: document.getElementById("kwBensin").value.split("\n").map(s => s.trim()).filter(Boolean),
+    aspen: document.getElementById("kwAspen").value.split("\n").map(s => s.trim()).filter(Boolean),
     skip:   document.getElementById("kwSkip").value.split("\n").map(s => s.trim()).filter(Boolean)
   };
   saveKeywordsLS();
