@@ -72,10 +72,12 @@
       <h2 style="margin:0;font-size:16px">Resultat</h2>
       <div class="row">
         <button class="primary" id="exportCsv">Exportera CSV</button>
+        <button id="toggleDebug">Felsökning: visa råtext</button>
         <button id="clearAll">Rensa allt</button>
       </div>
     </div>
     <div id="tableWrap" style="overflow-x:auto;margin-top:10px"></div>
+    <div id="debugArea"></div>
     <div class="sums" id="sums"></div>
     <div id="status"></div>
   </div>
@@ -110,6 +112,8 @@ const DEFAULT_KEYWORDS = {
 
 let keywords = loadKeywords();
 let rows = [];
+let debugTexts = {};
+let showDebug = false;
 let sortState = { col: "date", dir: 1 };
 
 function loadKeywords() {
@@ -158,6 +162,7 @@ async function handleFiles(files) {
   if (!list.length) { status("Inga PDF-filer hittades."); return; }
   status(`Läser ${list.length} fil(er)…`);
   const start = rows.length;
+  debugTexts = {};
   for (const f of list) {
     status(`Läser ${f.name}…`);
     try {
@@ -327,6 +332,17 @@ function render() {
   const dl = wrap.querySelector("datalist#tagList");
   if (dl) dl.innerHTML = tags.map(t => `<option value="${t}">`).join("");
   renderSums();
+  renderDebug();
+}
+
+function renderDebug() {
+  const el = document.getElementById("debugArea");
+  if (!showDebug || !Object.keys(debugTexts).length) { el.innerHTML = ""; return; }
+  let html = "";
+  for (const [name, text] of Object.entries(debugTexts)) {
+    html += `<h3 style="font-size:13px;margin:14px 0 4px">${name}</h3><pre style="white-space:pre-wrap;background:#f0f3f6;padding:10px;border-radius:6px;font-size:12px;max-height:260px;overflow:auto">${String(text).slice(0, 3000).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</pre>`;
+  }
+  el.innerHTML = html;
 }
 
 function renderSums() {
@@ -360,7 +376,12 @@ document.getElementById("exportCsv").addEventListener("click", () => {
   URL.revokeObjectURL(a.href);
 });
 
-document.getElementById("clearAll").addEventListener("click", () => { rows = []; render(); status(""); });
+document.getElementById("clearAll").addEventListener("click", () => { rows = []; debugTexts = {}; render(); status(""); });
+document.getElementById("toggleDebug").addEventListener("click", () => {
+  showDebug = !showDebug;
+  document.getElementById("toggleDebug").textContent = showDebug ? "Felsökning: dölj råtext" : "Felsökning: visa råtext";
+  renderDebug();
+});
 
 function fillKw() {
   document.getElementById("kwDiesel").value = keywords.diesel.join("\n");
