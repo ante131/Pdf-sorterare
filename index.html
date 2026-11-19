@@ -210,6 +210,7 @@ function findDate(text) {
 
 const qtyRe = new RegExp(String.raw`(kvantitet|mängd|volym|liter|antal)\D{0,12}(` + NUM + `)`, "i");
 const sumRe = new RegExp(String.raw`(summa|belopp|att betala|total)\D{0,20}(` + NUM + `)\s*(?:kr|sek|:-)`, "i");
+const sumNoCcyRe = new RegExp(String.raw`(summa|belopp|att betala|total)\D{0,20}\s(` + NUM + `)(?!\s*(?:%|st|liter|ltr|l\b))`, "i");
 
 function docCategoryHint(text) {
   const low = text.toLowerCase();
@@ -254,7 +255,7 @@ function extractRows(fileName, text) {
     }
     if (!amount) {
       for (let j = i + 1; j < Math.min(i + 9, lines.length); j++) {
-        const m2 = sumRe.exec(lines[j]);
+        const m2 = sumRe.exec(lines[j]) || sumNoCcyRe.exec(lines[j]);
         if (m2) { amount = parseNum(m2[2]); break; }
       }
     }
