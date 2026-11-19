@@ -57,7 +57,7 @@
 </head>
 <body>
 <header>
-  <h1>PDF FakturaSorterare – Diesel &amp; Bensin <small style="font-weight:400">(version 10)</small></h1>
+  <h1>PDF FakturaSorterare – Diesel &amp; Bensin <small style="font-weight:400">(version 11)</small></h1>
   <p>100 % offline: filerna analyseras lokalt i webbläsaren, inget laddas upp.</p>
 </header>
 <main>
@@ -234,6 +234,7 @@ function findDate(text) {
 }
 
 const qtyRe = new RegExp(String.raw`(kvantitet|mängd|volym|liter|antal)\D{0,12}(` + NUM + `)`, "i");
+const priceRe = new RegExp(String.raw`(a-pris|apris|pris(?:\/l| per liter)?|cpr|enhetspris)\D{0,10}(` + NUM + `)\s*(?:kr|sek|:-)?`, "i");
 const sumRe = new RegExp(String.raw`(summa|belopp|att betala|total)\D{0,20}(` + NUM + `)\s*(?:kr|sek|:-)`, "i");
 const sumNoCcyRe = new RegExp(String.raw`(summa|belopp|att betala|total)\D{0,20}\s(` + NUM + `)(?!\s*(?:%|st|liter|ltr|l\b))`, "i");
 
@@ -275,12 +276,24 @@ function extractRows(fileName, text) {
       if (!selfAmt) continue;
     }
     if (!category) category = hint || "okand";
-    let amount = 0;
+    let amount = 0, price = 0;
     {
       const sumM = sumRe.exec(line) || sumNoCcyRe.exec(line);
       if (sumM) amount = parseNum(sumM[2]);
+      const pM = priceRe.exec(line);
+      if (pM) price = parseNum(pM[2]);
+    }
+    if (!price) {
+      for (let j = Math.max(0, i - 4); j < Math.min(i + 5, lines.length); j++) {
+        if (j === i) continue;
+        const pM = priceRe.exec(lines[j]);
+        if (pM) { price = parseNum(pM[2]); break; }
+      }
     }
     if (!amount) amount = firstMatch(amountRe, line);
+    if (!amount && price && liters) amount = liters * price;
+    if (!amount && price) amount = price;
+    if (!price && amount && liters) price = Math.round((amount / liters) * 100) / 100;
     if (!amount) {
       for (let j = i + 1; j < Math.min(i + 9, lines.length); j++) {
         const m2 = sumRe.exec(lines[j]) || sumNoCcyRe.exec(lines[j]);
@@ -288,7 +301,7 @@ function extractRows(fileName, text) {
       }
     }
     if (!amount) { const nums = line.match(new RegExp(NUM, "g")) || []; amount = nums.length ? parseNum(nums[nums.length - 1]) : 0; }
-    out.push({ file: fileName, date, tag: "Ingen märkning", desc: line.slice(0, 160), category, liters, amount, raw: line });
+    out.push({ file: fileName, date, tag: "Ingen märkning", desc: line.slice(0, 160), category, liters, price, amount: Math.round(amount * 100) / 100, raw: line });
   }
   if (!out.length) {
     out.push({ file: fileName, date, tag: "Ingen märkning", desc: "(ingen bränslerad hittades – sätt kategori manuellt)", category: "okand", liters: 0, amount: 0, raw: "" });
@@ -303,7 +316,8 @@ const COLS = [
   { key: "category", label: "Kategori" },
   { key: "tag", label: "Märkning" },
   { key: "liters", label: "Liter" },
-  { key: "amount", label: "Belopp (kr)" }
+  { key: "price", label: "Pris/l (kr)" },
+  { key: "amount", label: "Summa (kr)" }
 ];
 
 function displayRows() {
@@ -329,6 +343,7 @@ function displayRows() {
     desc: g.n + " rader från samma faktura",
     category: g.ref.category,
     liters: g.liters,
+    price: g.liters ? Math.round((g.amount / g.liters) * 100) / 100 : 0,
     amount: g.amount,
     raw: ""
   })), grouped: true };
@@ -366,7 +381,8 @@ function renderInner() {
       <td><span class="tag ${cls}">${label}</span></td>
       <td><input type="text" list="tagList" data-i="${i}" value="${r.tag || ""}" style="width:110px"></td>
       <td>${r.liters ? r.liters.toLocaleString("sv-SE") : "–"}</td>
-      <td>${r.amount ? r.amount.toLocaleString("sv-SE") : "–"}</td>
+      <td>${r.price ? r.price.toLocaleString("sv-SE", { maximumFractionDigits: 2 }) : "–"}</td>
+      <td>${r.amount ? r.amount.toLocaleString("sv-SE", { maximumFractionDigits: 2 }) : "–"}</td>
       <td><select data-i="${i}">
         <option value="diesel"${r.category==="diesel"?" selected":""}>Diesel</option>
         <option value="bensin"${r.category==="bensin"?" selected":""}>Bensin</option>
@@ -380,7 +396,8 @@ function renderInner() {
     <td colspan="4">TOTALT ${shown.length} rader</td>
     <td style="text-align:right">Summa liter →</td>
     <td style="font-weight:900">${sumLiters.toLocaleString("sv-SE")}</td>
-    <td style="font-weight:900">${sumAmount.toLocaleString("sv-SE")}</td>
+    <td></td>
+    <td style="font-weight:900">${sumAmount.toLocaleString("sv-SE", { maximumFractionDigits: 2 })}</td>
     <td></td>
   </tr></tfoot></table>`;
   wrap.innerHTML = html;
@@ -441,7 +458,7 @@ function renderSums() {
   document.getElementById("sums").innerHTML = grand + box("Diesel","diesel") + box("Bensin","bensin") + box("Aspen","aspen") + html;
 
   const files = [...new Set(rows.map(r => r.file))];
-  let invHtml = "<table><thead><tr><th>Faktura (fil)</th><th>Datum</th><th>Kategorier</th><th>Liter</th><th>Belopp (kr)</th></tr></thead><tbody>";
+  let invHtml = "<table><thead><tr><th>Faktura (fil)</th><th>Datum</th><th>Kategorier</th><th>Liter</th><th>Summa (kr)</th></tr></thead><tbody>";
   let invSumL = 0, invSumA = 0;
   for (const f of files) {
     const g = rows.filter(r => r.file === f);
@@ -459,7 +476,7 @@ document.getElementById("exportCsv").addEventListener("click", () => {
   const head = COLS.map(c => c.label).join(";");
   const esc = v => `"${String(v ?? "").replace(/"/g, '""').replace(".", ",")}"`;
   const data = groupMode ? displayRows().list : rows;
-  const csv = "\uFEFF" + head + "\n" + data.map(r => [r.date, r.file, r.desc, r.category, r.tag || "", r.liters, r.amount].map(esc).join(";")).join("\n");
+  const csv = "\uFEFF" + head + "\n" + data.map(r => [r.date, r.file, r.desc, r.category, r.tag || "", r.liters, r.price || "", r.amount].map(esc).join(";")).join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   a.download = "branslefakturor.csv";
