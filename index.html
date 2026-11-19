@@ -172,8 +172,16 @@ async function handleFiles(files) {
       for (let p = 1; p <= doc.numPages; p++) {
         const page = await doc.getPage(p);
         const content = await page.getTextContent();
-        text += content.items.map(i => i.str).join(" ") + "\n";
-        content.items.forEach(it => { if (it.hasEOL) text += "\n"; });
+        let lastY = null, pageText = "";
+        for (const it of content.items) {
+          if (!it.str) continue;
+          const y = it.transform ? Math.round(it.transform[5]) : null;
+          if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) pageText += "\n";
+          pageText += it.str + (it.str.endsWith(" ") ? "" : " ");
+          if (it.hasEOL) pageText += "\n";
+          lastY = y;
+        }
+        text += pageText + "\n";
       }
       rows.push(...extractRows(f.name, text));
     } catch (err) {
@@ -231,15 +239,17 @@ function extractRows(fileName, text) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const low = line.toLowerCase();
-    if (keywords.skip.some(k => low.includes(k.toLowerCase()))) continue;
+    let liters = firstMatch(litersRe, line) || firstMatch(litersRe, low);
+    {
+      const qtyM0 = qtyRe.exec(line);
+      if (!liters && qtyM0) liters = parseNum(qtyM0[2]);
+    }
+    if (!liters && keywords.skip.some(k => low.includes(k.toLowerCase()))) continue;
     let category = "";
     const isDiesel = keywords.diesel.some(k => low.includes(k.toLowerCase()));
     const isBensin = keywords.bensin.some(k => low.includes(k.toLowerCase()));
     const isAspen = keywords.aspen.some(k => low.includes(k.toLowerCase()));
     if (isAspen) category = "aspen"; else if (isDiesel) category = "diesel"; else if (isBensin) category = "bensin";
-    let liters = firstMatch(litersRe, line) || firstMatch(litersRe, low);
-    const qtyM = qtyRe.exec(line);
-    if (!liters && qtyM) liters = parseNum(qtyM[2]);
     const hasKeywords = !!(isDiesel || isBensin || isAspen);
     if (!hasKeywords && !liters) continue;
     if (hasKeywords && !liters) {
