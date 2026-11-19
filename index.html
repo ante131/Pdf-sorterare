@@ -290,16 +290,16 @@ function extractRows(fileName, text) {
         if (pM) { price = parseNum(pM[2]); break; }
       }
     }
-    if (!amount) amount = firstMatch(amountRe, line);
-    if (!amount && price && liters) amount = liters * price;
-    if (!amount && price) amount = price;
-    if (!price && amount && liters) price = Math.round((amount / liters) * 100) / 100;
     if (!amount) {
       for (let j = i + 1; j < Math.min(i + 9, lines.length); j++) {
         const m2 = sumRe.exec(lines[j]) || sumNoCcyRe.exec(lines[j]);
         if (m2) { amount = parseNum(m2[2]); break; }
       }
     }
+    if (!amount) amount = firstMatch(amountRe, line);
+    if (!amount && price && liters) amount = liters * price;
+    if (!amount && price) amount = price;
+    if (!price && amount && liters) price = Math.round((amount / liters) * 100) / 100;
     if (!amount) { const nums = line.match(new RegExp(NUM, "g")) || []; amount = nums.length ? parseNum(nums[nums.length - 1]) : 0; }
     out.push({ file: fileName, date, tag: "Ingen märkning", desc: line.slice(0, 160), category, liters, price, amount: Math.round(amount * 100) / 100, raw: line });
   }
