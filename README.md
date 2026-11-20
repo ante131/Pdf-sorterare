@@ -13,8 +13,8 @@ Ett fristående offline-HTML-program som sorterar PDF-fakturor efter diesel- och
 - Export till CSV (Excel-vänligt, svenska decimaler)
 
 ## Användning
-1. Ladda ner `pdf.min.js` och `pdf.worker.min.js` (pdf.js 3.11.174) och lägg dem i samma mapp som `pdf-sorterare-v15.html`
-2. Öppna `pdf-sorterare-v15.html` i en modern webbläsare
+1. Ladda ner `pdf.min.js` och `pdf.worker.min.js` (pdf.js 3.11.174) och lägg dem i samma mapp som `pdf-sorterare-v16.html`
+2. Öppna `pdf-sorterare-v16.html` i en modern webbläsare
 3. Dra in dina PDF-fakturor och exportera resultatet till CSV
 
 ## Begränsningar
@@ -25,4 +25,4 @@ Ett fristående offline-HTML-program som sorterar PDF-fakturor efter diesel- och
 ## Versioner
 Filnamnet innehåller versionsnumret så att webbläsaren aldrig visar en gammal cachad version. Hämta alltid filen med högst nummer.
 
-Varje ny version sparar sitt nummer i filnamnet (t.ex. `pdf-sorterare-v15.html`) istället för att skriva över - därför kan du inte råka öppna en gammal fil.
+Varje ny version sparar sitt nummer i filnamnet (t.ex. `pdf-sorterare-v16.html`) istället för att skriva över - därför kan du inte råka öppna en gammal fil.
